@@ -1,0 +1,12 @@
+services:
+  meeting-api:
+    build: .
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+      DATABASE_URL: sqlite:////data/meeting_api.db
+    volumes:
+      - ./data:/data
+    ports:
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
