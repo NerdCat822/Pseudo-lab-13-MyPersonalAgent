@@ -1,0 +1,45 @@
+# --- OMC runtime state (project skills are the committable exception) ---
+**/.omc/*
+!**/.omc/skills/
+
+# --- OS / editors ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# --- Secrets ---
+.env
+.env.*
+!.env.example
+*.keystore
+*.jks
+*.p8
+*.p12
+*.mobileprovision
+
+# --- Python (services/) ---
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+services/*/data/
+
+# --- Flutter / Dart (apps/) ---
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+**/build/
+**/.gradle/
+**/local.properties
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/ephemeral/
+**/android/.gradle/
+**/android/key.properties
+**/*.g.dart
