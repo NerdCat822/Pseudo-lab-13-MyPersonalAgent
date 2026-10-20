@@ -1,0 +1,79 @@
+# Codemagic CI for apps/meeting_recorder (Flutter, Android + iOS).
+#
+# Both workflows are MANUAL: there is no `triggering:` block, so nothing runs on push.
+# Start a build from the Codemagic UI (or the REST API) for the branch you want.
+#
+# One-time setup in the Codemagic UI before the ios-testflight workflow can run:
+#   1. Add this GitHub repository as an app in Codemagic and pick the team that owns it
+#      (Teams -> Personal account or a team). Select "codemagic.yaml" as the config source.
+#   2. Teams -> Integrations -> App Store Connect: add an API key (Issuer ID, Key ID, .p8)
+#      with App Manager access. Its name must match `integrations.app_store_connect` below
+#      (placeholder: "codemagic-asc-key").
+#   3. Teams -> Code signing identities: either let Codemagic fetch/create the iOS
+#      distribution certificate and App Store provisioning profile through that
+#      integration (Codemagic can create them automatically), or upload your own.
+#   4. In App Store Connect (and the Apple Developer portal), register the bundle id
+#      dev.pseudolab13.meetingRecorder and create the app record, so TestFlight upload works.
+#   5. Set APP_STORE_APPLE_ID below to the numeric Apple ID of that app record.
+# Android debug builds need no signing or secrets.
+
+workflows:
+  android-debug:
+    name: Android debug APK
+    instance_type: linux_x2
+    max_build_duration: 30
+    working_directory: apps/meeting_recorder
+    environment:
+      flutter: stable
+    scripts:
+      - name: Get Flutter packages
+        script: |
+          flutter pub get
+      - name: Analyze
+        script: |
+          flutter analyze
+      - name: Build debug APK
+        script: |
+          flutter build apk --debug
+    artifacts:
+      - apps/meeting_recorder/build/app/outputs/flutter-apk/*.apk
+
+  ios-testflight:
+    name: iOS TestFlight
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    working_directory: apps/meeting_recorder
+    integrations:
+      app_store_connect: codemagic-asc-key # placeholder: name of the App Store Connect API key in Codemagic
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: dev.pseudolab13.meetingRecorder
+      vars:
+        APP_STORE_APPLE_ID: "0000000000" # placeholder: numeric Apple ID of the App Store Connect app
+    scripts:
+      - name: Get Flutter packages
+        script: |
+          flutter pub get
+      - name: Install CocoaPods dependencies (only if the project has a Podfile)
+        script: |
+          cd ios
+          if [ -f Podfile ]; then pod install; fi
+      - name: Set up code signing settings on the Xcode project
+        script: |
+          xcode-project use-profiles
+      - name: Build IPA
+        script: |
+          flutter build ipa --release \
+            --build-number=$(($(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID") + 1)) \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - apps/meeting_recorder/build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
