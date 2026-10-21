@@ -41,7 +41,8 @@ workflows:
       - name: Build debug APK
         script: |
           flutter build apk --debug
-    artifacts:
+    artifacts: # patterns relative to working_directory AND to the clone root, so either resolution works
+      - build/app/outputs/flutter-apk/*.apk
       - apps/meeting_recorder/build/app/outputs/flutter-apk/*.apk
 
   ios-unsigned-ipa:
@@ -77,8 +78,10 @@ workflows:
           VERSION=$(grep '^version:' ../../pubspec.yaml | awk '{print $2}' | tr '+' '-')
           zip -qr "meeting_recorder-${VERSION}-unsigned.ipa" Payload
           ls -la *.ipa
-    artifacts:
+    artifacts: # patterns relative to working_directory AND to the clone root, so either resolution works
+      - build/sideload/*.ipa
       - apps/meeting_recorder/build/sideload/*.ipa
+      - /Users/builder/clone/apps/meeting_recorder/build/sideload/*.ipa
       - /tmp/xcodebuild_logs/*.log
 
   ios-testflight:
@@ -114,6 +117,7 @@ workflows:
             --build-number=$(($(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID") + 1)) \
             --export-options-plist=/Users/builder/export_options.plist
     artifacts:
+      - build/ios/ipa/*.ipa
       - apps/meeting_recorder/build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
     publishing:
