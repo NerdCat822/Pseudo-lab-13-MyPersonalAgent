@@ -1,3 +1,4 @@
+import json
 import os
 import uuid
 from pathlib import Path
@@ -19,7 +20,9 @@ from app.models import (
     Segment,
     SegmentStatus,
     Speaker,
+    Summary,
     UsageLog,
+    Utterance,
     new_id,
 )
 from app.schemas import (
@@ -29,6 +32,10 @@ from app.schemas import (
     MeetingOut,
     SegmentOut,
     SpeakerOut,
+    SpeakerPatch,
+    SummaryOut,
+    TranscriptOut,
+    UtteranceOut,
 )
 
 router = APIRouter(prefix="/meetings", dependencies=[Depends(require_token)])
@@ -98,13 +105,17 @@ def _detail(db: Session, meeting: Meeting) -> MeetingDetail:
             UsageLog.meeting_id == meeting.id
         )
     )
+    has_summary = db.get(Summary, meeting.id) is not None
     return MeetingDetail(
         **MeetingOut.model_validate(meeting).model_dump(),
         segments_total=sum(counts.values()),
         segments_received=counts.get(SegmentStatus.received, 0),
+        segments_processing=counts.get(SegmentStatus.normalizing, 0)
+        + counts.get(SegmentStatus.transcribing, 0),
         segments_done=counts.get(SegmentStatus.done, 0),
         segments_failed=counts.get(SegmentStatus.failed, 0),
         cost_usd=float(cost),
+        has_summary=has_summary,
         speakers=[SpeakerOut.model_validate(s) for s in speakers],
     )
 
@@ -281,5 +292,86 @@ def finish_meeting(meeting_id: uuid.UUID, payload: FinishRequest, db: DbSession)
     meeting.expected_segments = payload.segment_count
     if payload.duration_sec is not None:
         meeting.duration_sec = payload.duration_sec
+    db.commit()
+    return _detail(db, meeting)
+
+
+@router.get("/{meeting_id}/transcript", response_model=TranscriptOut)
+def get_transcript(meeting_id: uuid.UUID, db: DbSession) -> TranscriptOut:
+    """Utterances so far, in time order. Available while the meeting is still processing."""
+    meeting = _get_meeting(db, meeting_id)
+    rows = db.execute(
+        select(Utterance, Speaker.display_name)
+        .outerjoin(Speaker, Speaker.id == Utterance.speaker_id)
+        .where(Utterance.meeting_id == meeting.id)
+        .order_by(Utterance.start_sec, Utterance.id)
+    ).all()
+    return TranscriptOut(
+        meeting_id=meeting.id,
+        status=meeting.status,
+        utterances=[
+            UtteranceOut(
+                id=u.id,
+                speaker_id=u.speaker_id,
+                speaker_name=name or "?",
+                start_sec=u.start_sec,
+                end_sec=u.end_sec,
+                text=u.text,
+                segment_id=u.segment_id,
+            )
+            for u, name in rows
+        ],
+    )
+
+
+@router.get("/{meeting_id}/summary", response_model=SummaryOut)
+def get_summary(meeting_id: uuid.UUID, db: DbSession) -> SummaryOut:
+    meeting = _get_meeting(db, meeting_id)
+    summary = db.get(Summary, meeting.id)
+    if summary is None:
+        raise api_error(
+            404, "summary_not_ready", f"No summary yet; meeting status is {meeting.status}"
+        )
+    return SummaryOut(
+        meeting_id=meeting.id,
+        model=summary.model,
+        prompt_version=summary.prompt_version,
+        created_at=summary.created_at,
+        **json.loads(summary.json),
+    )
+
+
+@router.patch("/{meeting_id}/speakers/{speaker_id}", response_model=SpeakerOut)
+def rename_speaker(
+    meeting_id: uuid.UUID, speaker_id: uuid.UUID, payload: SpeakerPatch, db: DbSession
+) -> Speaker:
+    meeting = _get_meeting(db, meeting_id)
+    speaker = db.get(Speaker, str(speaker_id))
+    if speaker is None or speaker.meeting_id != meeting.id:
+        raise api_error(status.HTTP_404_NOT_FOUND, "not_found", "Speaker not found")
+    speaker.display_name = payload.display_name
+    db.commit()
+    return speaker
+
+
+@router.post("/{meeting_id}/retry", response_model=MeetingDetail)
+def retry_meeting(meeting_id: uuid.UUID, db: DbSession) -> MeetingDetail:
+    """Re-queue failed segments and put a failed meeting back into processing."""
+    meeting = _get_meeting(db, meeting_id)
+    if meeting.status != MeetingStatus.failed:
+        raise api_error(409, "meeting_not_failed", f"Meeting is {meeting.status}, not failed")
+    for segment in db.scalars(
+        select(Segment).where(
+            Segment.meeting_id == meeting.id, Segment.status == SegmentStatus.failed
+        )
+    ):
+        segment.status = SegmentStatus.received
+        segment.retry_count = 0
+        segment.error = None
+    meeting.status = (
+        MeetingStatus.processing if meeting.expected_segments else MeetingStatus.recording
+    )
+    meeting.error = None
+    meeting.failed_step = None
     db.commit()
     return _detail(db, meeting)

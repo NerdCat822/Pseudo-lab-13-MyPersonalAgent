@@ -54,7 +54,47 @@ class MeetingOut(BaseModel):
 class MeetingDetail(MeetingOut):
     segments_total: int
     segments_received: int
+    segments_processing: int
     segments_done: int
     segments_failed: int
     cost_usd: float
+    has_summary: bool
     speakers: list[SpeakerOut]
+
+
+class SpeakerPatch(BaseModel):
+    display_name: str = Field(min_length=1, max_length=255)
+
+
+class UtteranceOut(BaseModel):
+    id: int
+    speaker_id: str | None
+    speaker_name: str
+    start_sec: float
+    end_sec: float
+    text: str
+    segment_id: str | None
+
+
+class TranscriptOut(BaseModel):
+    meeting_id: str
+    status: MeetingStatus
+    utterances: list[UtteranceOut]
+
+
+class ActionItem(BaseModel):
+    what: str
+    who: str = ""
+    due: str = ""
+
+
+class SummaryOut(BaseModel):
+    meeting_id: str
+    model: str
+    prompt_version: str
+    created_at: datetime
+    summary: str
+    decisions: list[str]
+    action_items: list[ActionItem]
+    topics: list[str]
+    open_questions: list[str]

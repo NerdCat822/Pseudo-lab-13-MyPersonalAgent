@@ -1,8 +1,16 @@
 # meeting-api
 
-Personal single-user FastAPI backend for the meeting recorder app. W0 scope: health check,
-Bearer auth, SQLite schema, meeting/segment/speaker upload, finish signal, list and detail.
-Transcription (OpenAI) arrives in W2; the worker will pick up meetings in `processing` status.
+Personal single-user FastAPI backend for the meeting recorder app: health check, Bearer auth,
+SQLite schema, meeting/segment/speaker upload, finish signal, list and detail, plus an in-process
+worker that normalizes each segment with ffmpeg, transcribes it with OpenAI
+(`gpt-4o-transcribe-diarize`, speaker labels), merges the utterances with the segment offsets and
+summarizes the meeting with a JSON-schema response (`gpt-5-mini`).
+
+Pipeline: segment `received → normalizing → transcribing → done|failed` (3 attempts), meeting
+`recording → processing → merging → summarizing → done|failed`. Segments are transcribed as soon as
+they arrive, even while the meeting is still recording; finalization waits until `done` segments
+reach `expected_segments` from `finish`. With no speech at all the summary step is skipped (model
+`none`). A restart re-queues in-flight work. `POST /meetings/{id}/retry` re-queues failed segments.
 
 ## Run
 
@@ -34,6 +42,12 @@ Checks: `uv run ruff check . && uv run ruff format --check . && uv run pytest -q
 | `DATABASE_URL` | `sqlite:///<DATA_DIR>/meeting_api.db` | |
 | `MAX_UPLOAD_MB` | `200` | see Limits below |
 | `ENABLE_DOCS` | `false` | serve `/docs`, `/redoc`, `/openapi.json` |
+| `OPENAI_API_KEY` | empty | empty disables the worker; uploads then stay `received` |
+| `TRANSCRIBE_MODEL` | `gpt-4o-transcribe-diarize` | only OpenAI model with speaker labels (deprecated, shuts down 2027-02-26) |
+| `SUMMARY_MODEL` | `gpt-5-mini` | Responses API with a strict JSON schema |
+| `WORKER_ENABLED` | `true` | tests set it to `false` |
+| `WORKER_POLL_SEC` | `2` | idle poll interval |
+| `SEGMENT_MAX_RETRIES` | `3` | attempts per segment before `failed` |
 
 ## curl examples
 
@@ -51,7 +65,15 @@ curl -H "$T" $B/meetings/$ID                                # detail + progress
 curl -H "$T" "$B/meetings?q=weekly&limit=20&offset=0"       # list / title search
 curl -H "$T" -H 'Content-Type: application/json' -d '{"segment_count": 3}' \
   $B/meetings/$ID/finish                                    # -> processing
+curl -H "$T" $B/meetings/$ID/transcript                     # utterances so far (speaker_name, start_sec, text)
+curl -H "$T" $B/meetings/$ID/summary                        # 404 summary_not_ready until done
+curl -H "$T" -X PATCH -H 'Content-Type: application/json' -d '{"display_name":"민수"}' \
+  $B/meetings/$ID/speakers/$SPEAKER_ID                      # rename A/B labels
+curl -H "$T" -X POST $B/meetings/$ID/retry                  # only when status is failed
 ```
+
+Verified 2026-10-21 with a 0.5 s English sample: transcript `[0.0-0.2] A: Hello.`, summary from
+`gpt-5-mini`, cost logged as $0.0008.
 
 The finish body is `{"segment_count": N, "duration_sec": optional}`.
 
@@ -78,6 +100,8 @@ Allowed upload extensions: m4a, mp4, mp3, wav, webm, mpeg, mpga.
 | 409 | `index_out_of_range` | Segment `index >= expected_segments` after `finish` |
 | 409 | `meeting_closed` | Segment upload while the meeting is merging, summarizing, done or failed |
 | 409 | `speaker_limit` | Fifth speaker on one meeting |
+| 409 | `meeting_not_failed` | `retry` on a meeting that is not `failed` |
+| 404 | `summary_not_ready` | `summary` before the meeting reached `done` |
 | 413 | `request_too_large` | Whole request above `MAX_UPLOAD_MB` + 1 MiB (middleware, streaming) |
 | 413 | `file_too_large` | One file above `MAX_UPLOAD_MB` while being written |
 | 422 | `unsupported_extension` | Upload extension not in the allow-list |

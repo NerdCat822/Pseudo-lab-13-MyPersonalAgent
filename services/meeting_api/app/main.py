@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -8,6 +10,10 @@ from app.config import get_settings
 from app.db import create_tables, make_engine, make_session_factory
 from app.middleware import BodyGuardMiddleware
 from app.routers import health, meetings
+from app.transcribe import OpenAITranscriber
+from app.worker import reset_stale, worker_loop
+
+log = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -17,8 +23,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine = make_engine(settings.database_url)
     create_tables(engine)
     app.state.session_factory = make_session_factory(engine)
-    yield
-    engine.dispose()
+
+    stop = asyncio.Event()
+    task: asyncio.Task[None] | None = None
+    if settings.worker_enabled:
+        if settings.openai_api_key:
+            reset_stale(app.state.session_factory)
+            transcriber = OpenAITranscriber(
+                settings.openai_api_key, settings.transcribe_model, settings.summary_model
+            )
+            task = asyncio.create_task(
+                worker_loop(app.state.session_factory, settings, transcriber, stop)
+            )
+        else:
+            log.warning("OPENAI_API_KEY is empty: worker disabled, segments stay 'received'")
+    try:
+        yield
+    finally:
+        stop.set()
+        if task is not None:
+            await task
+        engine.dispose()
 
 
 def create_app() -> FastAPI:

@@ -93,6 +93,7 @@ class Segment(Base):
     status: Mapped[SegmentStatus] = mapped_column(String(16), default=SegmentStatus.received)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
     openai_request_id: Mapped[str | None] = mapped_column(String(128))
+    error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
 

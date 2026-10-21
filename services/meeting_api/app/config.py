@@ -14,6 +14,14 @@ class Settings(BaseSettings):
     max_upload_mb: int = 200
     enable_docs: bool = False
 
+    # Transcription / summary pipeline (W2)
+    openai_api_key: str = ""
+    transcribe_model: str = "gpt-4o-transcribe-diarize"
+    summary_model: str = "gpt-5-mini"
+    worker_enabled: bool = True
+    worker_poll_sec: float = 2.0
+    segment_max_retries: int = 3
+
     @field_validator("meeting_api_token")
     @classmethod
     def _strong_token(cls, value: str) -> str:
