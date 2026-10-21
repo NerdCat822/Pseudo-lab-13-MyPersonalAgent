@@ -23,7 +23,7 @@
 | 요약 | OpenAI 저가 텍스트 모델(`gpt-5-mini` 기본) | 전사 비용 대비 무시할 수준 |
 | MVP 범위 | 녹음 + 업로드 + 전사 + 화자 분리 + 요약 + 조회 | 사용자 선택 |
 | 참석자 | 보통 2~4명 | 참석자 음성 등록(최대 4명)으로 화자 일관성 해결 |
-| 기기·환경 | Mac 없음, Apple 개발자 계정 없음, Android 실기기 없음, 개발 머신은 WSL2 | 7장 |
+| 기기·환경 | Mac 없음, Apple 개발자 계정 없음, Android 실기기 없음, 개발 머신은 WSL2(에뮬레이터도 WSL2 내부 KVM) | 7장 |
 | 네트워크 | 녹음은 오프라인 가능. 업로드·전사·요약은 서버 연결 필요 | 앱에 업로드 대기열을 둬서 흡수 |
 
 > **주의: "APK"와 "아이폰"은 양립하지 않는다.** APK는 Android 전용이다. iPhone에는 macOS + Xcode로 빌드한 IPA만
@@ -217,25 +217,25 @@ OpenAI 파일 엔드포인트는 파일당 25MB가 상한이다.
 
 ### 7.1 현재 상태 (WSL2 Ubuntu)
 
-W0(2026-10-20) 기준 WSL2에 **Flutter 3.47.7 stable(~/development/flutter)**, **Android SDK(platform 36, build-tools 36.0.0, platform-tools 37, ~/Android/Sdk)** 를 설치했고,
-Java 17 · Python 3.12 · uv · ffmpeg · Docker는 이미 있었다. PATH는 `~/.zshrc`·`~/.bashrc`의 `flutter-android toolchain` 블록이 잡아준다. sudo는 쓸 수 없다.
-`flutter doctor`는 Flutter·Android toolchain 녹색, Linux desktop toolchain 빨강(의도적으로 무시). 디버그 APK 빌드까지 확인했다.
-**아직 없는 것**: Windows 쪽 Android Studio·에뮬레이터·adb(수동 설치, [02-w0-windows-emulator-setup.md](02-w0-windows-emulator-setup.md)), Tailscale, Apple Developer 계정, gh CLI.
-주 개발 루프는 **Android 에뮬레이터**, iPhone은 TestFlight로만 검증한다.
+W0(2026-10-21) 기준 WSL2에 **Flutter 3.47.7 stable(~/development/flutter)**, **Temurin JDK 21(~/development/jdk-21)**,
+**Android SDK(platforms 35·36, build-tools 36.0.0, platform-tools 37.0.1, NDK 28.2, emulator 37.2.12, android-36 google_apis 이미지, ~/Android/Sdk)** 를 설치했다.
+Python 3.12 · uv · ffmpeg · Docker는 이미 있었다. PATH는 `~/.flutter-android-toolchain.sh`(`~/.zshrc`·`~/.bashrc`가 source)가 잡아준다.
+sudo 비밀번호는 없지만 `wsl.exe -u root -- <명령>`으로 루트 작업이 가능하다.
+`flutter doctor`는 Flutter·Android toolchain 녹색, Linux desktop toolchain 빨강(의도적으로 무시). 디버그 APK 빌드·에뮬레이터 실행·백엔드 접속까지 확인했다.
+**아직 없는 것**: Tailscale, Apple Developer 계정, gh CLI, GitHub 원격.
+주 개발 루프는 **WSL2 내부 Android 에뮬레이터**, iPhone은 TestFlight로만 검증한다.
 
-### 7.2 Android 개발 루프 (확정: 에뮬레이터)
+### 7.2 Android 개발 루프 (확정: WSL2 내부 KVM 에뮬레이터)
 
-권장 구성은 **빌드는 WSL2, 에뮬레이터는 Windows**다.
+빌드·adb·에뮬레이터·백엔드가 **모두 WSL2 안**에서 돈다. 상세와 검증 기록은 [02-w0-windows-emulator-setup.md](02-w0-windows-emulator-setup.md).
 
-- WSL2: Flutter 3.47 + Android cmdline-tools(SDK, platform-tools) 설치. 코드와 빌드가 이 저장소(WSL)에서 돌아간다.
-- Windows: Android Studio로 에뮬레이터(API 34+) 실행. adb 서버도 Windows 쪽이 담당.
-- 브리지: WSL2의 adb 클라이언트가 Windows adb 서버에 붙도록 `ADB_SERVER_SOCKET=tcp:<Windows 호스트>:5037` 설정
-  (WSL2 mirrored 네트워킹이면 localhost). `flutter devices`에 에뮬레이터가 보이면 성공. **W0에서 동작 검증 필요.**
-- 대안: 브리지가 불안정하면 Flutter까지 전부 Windows에 설치하고 저장소를 Windows 파일시스템으로 옮긴다(`\\wsl$` 경로의 Gradle 빌드는 매우 느리다).
-- 에뮬레이터 마이크: Extended controls → Microphone → "Virtual microphone uses host audio input". 녹음·업로드·전사 기능 검증은 가능하지만
-  **화면 잠금·장시간 녹음 신뢰성은 에뮬레이터로 검증할 수 없다** → iPhone TestFlight에서 검증.
-- 에뮬레이터에서 WSL2의 백엔드 접속: Windows 호스트 기준 `10.0.2.2:<port>`, WSL2 포트는 mirrored 네트워킹 또는 `netsh portproxy`로 노출.
-- 2026-10-20 확인: WSL2는 기본 NAT 모드(호스트 IP 172.25.0.1), Windows에 Android Studio·adb 없음. 손으로 할 단계와 브리지 설정은 [02-w0-windows-emulator-setup.md](02-w0-windows-emulator-setup.md)에 정리.
+- WSL2는 중첩 가상화로 `/dev/kvm`을 제공한다. Linux용 emulator 37.2.12 + AVD `pixel_api36`(API 36, RAM 2GB, 소프트웨어 GPU)가 약 75초에 콜드 부팅한다. 창은 WSLg로 Windows 바탕화면에 뜬다.
+- 실행: `emu`(헬퍼) → `flutter run -d emulator-5554`. adb 서버는 WSL 로컬이라 Windows 브리지가 필요 없다.
+- 에뮬레이터에서 WSL 백엔드는 `http://10.0.2.2:8000`으로 바로 닿는다(검증 완료). portproxy·mirrored 네트워킹 불필요.
+- 마이크: WSLg PulseAudio가 Windows 마이크를 넘긴다. Extended controls → Microphone → "Virtual microphone uses host audio input". **실제 입력은 W1 녹음 스파이크에서 확인.**
+  녹음·업로드·전사 기능 검증은 가능하지만 **화면 잠금·장시간 녹음 신뢰성은 에뮬레이터로 검증할 수 없다** → iPhone TestFlight에서 검증.
+- Windows 쪽 에뮬레이터(Android Studio, WHPX)는 이 PC(Windows 11 26H2)에서 게스트가 실행되지 않아 **사용하지 않는다**. 원인 조사와 남겨 둔 브리지 헬퍼는 02 문서 3장.
+- 메모리: 호스트 15.7GB. `.wslconfig`에 `memory=8GB`, `autoMemoryReclaim=gradual` 설정(다음 WSL 재시작 후 적용).
 
 ### 7.3 iPhone 경로
 
@@ -301,7 +301,7 @@ Java 17 · Python 3.12 · uv · ffmpeg · Docker는 이미 있었다. PATH는 `~
 - 백엔드를 **어디서** 돌릴 것인가: 집 PC/WSL2 + Tailscale(비용 0, PC 꺼지면 대기) vs 소형 VPS(월 $4~6, 상시). 기획서는 전자를 기본값으로 둔다.
 - 백엔드 언어가 Python/FastAPI여도 되는가(이 머신에 Python 3.12가 있어 가정). 다른 선호가 있으면 4.3 API 초안은 그대로 두고 구현만 바꾼다.
 
-## 11. 다음 액션 (W0 진행 상황, 2026-10-20)
+## 11. 다음 액션 (W0 진행 상황, 2026-10-21)
 
 | # | 항목 | 상태 |
 |---|---|---|
@@ -309,9 +309,11 @@ Java 17 · Python 3.12 · uv · ffmpeg · Docker는 이미 있었다. PATH는 `~
 | 2 | 모노레포 구성 `apps/` `services/` `docs/`, `git init` | **완료** (GitHub 원격은 미생성, gh CLI 없음) |
 | 3 | FastAPI 스캐폴드: `/health`, Bearer 인증(본문 파싱 전 미들웨어), 스키마, 세그먼트·참석자 업로드, finish, 테스트 60개, Docker 이미지 | **완료** (코드 리뷰 지적 20건 반영) |
 | 4 | Flutter 스캐폴드: `flutter create`, 의존성, Android/iOS 권한 설정, 디버그 APK, `codemagic.yaml` | **완료** (iOS 빌드는 Codemagic에서만 검증 가능) |
-| 5 | Windows: Android Studio 설치, AVD, adb 브리지, 에뮬레이터→WSL 백엔드 접속 | **대기** (사용자 수동, 02 문서) |
+| 5 | 에뮬레이터: WSL2 내부 KVM 에뮬레이터 부팅, Hello World 실행, 에뮬레이터→WSL 백엔드 `/health` 접속 | **완료** (2026-10-21, Windows WHPX 경로는 실패해 포기, 02 문서) |
 | 6 | GitHub 원격 저장소 생성 + Codemagic 연결 | **대기** (저장소 이름·공개 범위 결정 필요) |
 | 7 | Apple Developer 가입(권장 W1 시작) → TestFlight → 리스크 1 스파이크 | **대기** |
+| 8 | W2 선행: 서버 워커(ffmpeg 정규화·분할 → diarize 전사 → 오프셋 병합 → JSON 요약), transcript/summary/retry/화자 이름 API, 테스트 71개 | **완료** (2026-10-21, 실제 OpenAI 호출로 검증, $0.0008) |
+| 9 | W1/W3 선행: 앱 UI(목록·녹음·결과·설정), 세그먼트 녹음→즉시 업로드→finish, 결과 폴링·요약·화자 이름 변경·공유 | **완료** (2026-10-21, 에뮬레이터 end-to-end). 미완: 영속 업로드 대기열, 포그라운드 서비스, 참석자 등록 UI, 에뮬레이터 마이크 입력 검증 |
 
 ## 부록 A. 참고 링크 (공식)
 
@@ -331,4 +333,4 @@ Java 17 · Python 3.12 · uv · ffmpeg · Docker는 이미 있었다. PATH는 `~
 - `gpt-live-transcribe` 임시 비밀의 유효 시간.
 - Apple Developer Program 연회비가 여전히 $99인지.
 - `record` 패키지의 백그라운드 녹음 문서(링크 404) 내용.
-- WSL2 ↔ Windows adb 브리지와 에뮬레이터 → WSL2 백엔드 접속의 실제 동작(W0에서 검증).
+- ~~WSL2 ↔ Windows adb 브리지와 에뮬레이터 → WSL2 백엔드 접속의 실제 동작(W0에서 검증).~~ 2026-10-21: 에뮬레이터를 WSL2 내부에서 돌리는 방식으로 검증 완료. 에뮬레이터 마이크 입력은 미검증.

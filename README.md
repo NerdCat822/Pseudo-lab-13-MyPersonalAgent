@@ -4,7 +4,7 @@
 
 | # | 앱 | 상태 | 기획서 |
 |---|---|---|---|
-| 01 | 회의 녹음·전사 앱 (Flutter 앱 + FastAPI 백엔드 + OpenAI STT) | W0 환경 구축 중 | [docs/01-meeting-recorder-plan.md](docs/01-meeting-recorder-plan.md) |
+| 01 | 회의 녹음·전사 앱 (Flutter 앱 + FastAPI 백엔드 + OpenAI STT) | W0 환경 구축 완료(GitHub·Codemagic 연결만 남음) | [docs/01-meeting-recorder-plan.md](docs/01-meeting-recorder-plan.md) |
 
 ## 저장소 구조
 
@@ -17,6 +17,6 @@ codemagic.yaml             Android APK / iOS TestFlight CI (수동 트리거)
 
 ## 개발 환경 요약
 
-- 빌드·백엔드는 WSL2(Ubuntu 22.04), Android 에뮬레이터는 Windows. 연결 방법은 [docs/02-w0-windows-emulator-setup.md](docs/02-w0-windows-emulator-setup.md).
+- 빌드·백엔드·Android 에뮬레이터 모두 WSL2(Ubuntu 22.04) 안에서 돈다(에뮬레이터는 KVM, 창은 WSLg). 설정과 검증 기록은 [docs/02-w0-windows-emulator-setup.md](docs/02-w0-windows-emulator-setup.md).
 - iOS는 로컬 빌드 불가. Codemagic → TestFlight로만 설치한다.
 - 백엔드 실행: `cd services/meeting_api && uv sync && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000` (자세한 내용은 해당 디렉터리 README).

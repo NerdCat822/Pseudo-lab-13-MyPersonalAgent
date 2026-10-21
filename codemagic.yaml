@@ -16,6 +16,12 @@
 #      dev.pseudolab13.meetingRecorder and create the app record, so TestFlight upload works.
 #   5. Set APP_STORE_APPLE_ID below to the numeric Apple ID of that app record.
 # Android debug builds need no signing or secrets.
+#
+# ios-unsigned-ipa needs NO Apple account: it builds with --no-codesign and zips Runner.app into
+# an .ipa that you sign yourself on Windows with Sideloadly (free Apple ID, 7-day certificate).
+# Optional: add a Codemagic environment variable group "meeting_api" with MEETING_API_URL and
+# MEETING_API_TOKEN (mark the token secret) to bake the server defaults into the build; otherwise
+# enter them in the app's settings screen after installing.
 
 workflows:
   android-debug:
@@ -37,6 +43,43 @@ workflows:
           flutter build apk --debug
     artifacts:
       - apps/meeting_recorder/build/app/outputs/flutter-apk/*.apk
+
+  ios-unsigned-ipa:
+    name: iOS unsigned IPA (sideload)
+    instance_type: mac_mini_m2
+    max_build_duration: 45
+    working_directory: apps/meeting_recorder
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      groups:
+        - meeting_api # optional; may not exist
+    scripts:
+      - name: Get Flutter packages
+        script: |
+          flutter pub get
+      - name: Analyze and test
+        script: |
+          flutter analyze
+          flutter test
+      - name: Build iOS without code signing
+        script: |
+          flutter build ios --release --no-codesign \
+            --dart-define=MEETING_API_URL="${MEETING_API_URL:-}" \
+            --dart-define=MEETING_API_TOKEN="${MEETING_API_TOKEN:-}"
+      - name: Package Runner.app as an unsigned .ipa
+        script: |
+          set -e
+          rm -rf build/sideload && mkdir -p build/sideload/Payload
+          cp -R build/ios/iphoneos/Runner.app build/sideload/Payload/
+          cd build/sideload
+          VERSION=$(grep '^version:' ../../pubspec.yaml | awk '{print $2}' | tr '+' '-')
+          zip -qr "meeting_recorder-${VERSION}-unsigned.ipa" Payload
+          ls -la *.ipa
+    artifacts:
+      - apps/meeting_recorder/build/sideload/*.ipa
+      - /tmp/xcodebuild_logs/*.log
 
   ios-testflight:
     name: iOS TestFlight
