@@ -8,8 +8,9 @@ from fastapi import FastAPI
 from app import __version__
 from app.config import get_settings
 from app.db import create_tables, make_engine, make_session_factory
+from app.live import OpenAIUpstream
 from app.middleware import BodyGuardMiddleware
-from app.routers import health, meetings
+from app.routers import health, live, meetings
 from app.transcribe import OpenAITranscriber
 from app.worker import reset_stale, worker_loop
 
@@ -23,20 +24,28 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine = make_engine(settings.database_url)
     create_tables(engine)
     app.state.session_factory = make_session_factory(engine)
+    # The worker, "AI에게 질문하기" and live summaries share one OpenAI wrapper; live captions
+    # get a factory for upstream Realtime connections. Tests replace both on app.state.
+    app.state.transcriber = None
+    app.state.live_upstream_factory = None
+    if settings.openai_api_key:
+        app.state.transcriber = OpenAITranscriber(
+            settings.openai_api_key,
+            settings.transcribe_model,
+            settings.summary_model,
+            settings.chat_model,
+        )
+        app.state.live_upstream_factory = OpenAIUpstream.connect
+    else:
+        log.warning("OPENAI_API_KEY is empty: worker, chat and live captions are disabled")
 
     stop = asyncio.Event()
     task: asyncio.Task[None] | None = None
-    if settings.worker_enabled:
-        if settings.openai_api_key:
-            reset_stale(app.state.session_factory)
-            transcriber = OpenAITranscriber(
-                settings.openai_api_key, settings.transcribe_model, settings.summary_model
-            )
-            task = asyncio.create_task(
-                worker_loop(app.state.session_factory, settings, transcriber, stop)
-            )
-        else:
-            log.warning("OPENAI_API_KEY is empty: worker disabled, segments stay 'received'")
+    if settings.worker_enabled and app.state.transcriber is not None:
+        reset_stale(app.state.session_factory)
+        task = asyncio.create_task(
+            worker_loop(app.state.session_factory, settings, app.state.transcriber, stop)
+        )
     try:
         yield
     finally:
@@ -58,6 +67,8 @@ def create_app() -> FastAPI:
     )
     app.include_router(health.router)
     app.include_router(meetings.router)
+    app.include_router(meetings.meta_router)
+    app.include_router(live.router)
 
     # Wrap the complete stack so the guard sits outside Starlette's error middleware.
     build_stack = app.build_middleware_stack

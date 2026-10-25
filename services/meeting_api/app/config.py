@@ -14,13 +14,27 @@ class Settings(BaseSettings):
     max_upload_mb: int = 200
     enable_docs: bool = False
 
-    # Transcription / summary pipeline (W2)
+    # Transcription / summary pipeline
     openai_api_key: str = ""
     transcribe_model: str = "gpt-4o-transcribe-diarize"
     summary_model: str = "gpt-5-mini"
+    chat_model: str = "gpt-5-mini"
     worker_enabled: bool = True
     worker_poll_sec: float = 2.0
     segment_max_retries: int = 3
+    # Long uploads (imported files) are cut into chunks of at most this many seconds before
+    # diarization; speaker reference clips carry speaker identity across chunks.
+    transcribe_chunk_sec: int = 600
+    auto_speaker_refs: bool = True
+
+    # Live captions (server relays app audio to the OpenAI Realtime transcription API)
+    live_transcribe_model: str = "gpt-live-transcribe"
+    live_languages: str = "ko"  # comma-separated ISO codes
+    live_delay: str = "low"  # minimal | low | medium | high | xhigh
+    openai_realtime_url: str = "wss://api.openai.com/v1/realtime?intent=transcription"
+    # A periodic "실시간 요약" is produced once this much new caption text and time accumulated.
+    live_summary_min_chars: int = 300
+    live_summary_min_sec: float = 120.0
 
     @field_validator("meeting_api_token")
     @classmethod
@@ -40,6 +54,10 @@ class Settings(BaseSettings):
     @property
     def max_upload_bytes(self) -> int:
         return self.max_upload_mb * 1024 * 1024
+
+    @property
+    def live_language_list(self) -> list[str]:
+        return [c.strip() for c in self.live_languages.split(",") if c.strip()]
 
 
 @lru_cache

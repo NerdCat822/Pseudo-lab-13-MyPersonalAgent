@@ -26,6 +26,8 @@ def client(monkeypatch: pytest.MonkeyPatch, data_dir: Path) -> Iterator[TestClie
     monkeypatch.setenv("DATA_DIR", str(data_dir))
     monkeypatch.setenv("MAX_UPLOAD_MB", "1")
     monkeypatch.setenv("WORKER_ENABLED", "false")
+    # .env holds a real key; tests must never reach OpenAI. Fakes are set on app.state.
+    monkeypatch.setenv("OPENAI_API_KEY", "")
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("ENABLE_DOCS", raising=False)
     get_settings.cache_clear()

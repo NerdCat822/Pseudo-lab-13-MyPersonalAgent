@@ -3,6 +3,7 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
@@ -75,6 +76,9 @@ class Meeting(Base):
     error: Mapped[str | None] = mapped_column(Text)
     failed_step: Mapped[str | None] = mapped_column(String(32))
     expected_segments: Mapped[int | None] = mapped_column(Integer)
+    # Note template that drives the summary: meeting | keypoints | lecture | thoughts.
+    template: Mapped[str] = mapped_column(String(16), default="meeting")
+    folder: Mapped[str | None] = mapped_column(String(64), index=True)
 
 
 class Segment(Base):
@@ -130,6 +134,7 @@ class Summary(Base):
     model: Mapped[str] = mapped_column(String(64))
     prompt_version: Mapped[str] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    template: Mapped[str | None] = mapped_column(String(16))
 
 
 class Bookmark(Base):
@@ -151,4 +156,45 @@ class UsageLog(Base):
     tokens_in: Mapped[int | None] = mapped_column(Integer)
     tokens_out: Mapped[int | None] = mapped_column(Integer)
     cost_usd: Mapped[float | None] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class LiveCaption(Base):
+    """A finished live-caption line (gpt-live-transcribe, no speaker) captured while recording."""
+
+    __tablename__ = "live_captions"
+    __table_args__ = (Index("ix_live_captions_meeting_at", "meeting_id", "at_sec"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    meeting_id: Mapped[str] = mapped_column(ForeignKey("meetings.id"), index=True)
+    at_sec: Mapped[float] = mapped_column(Float)
+    end_sec: Mapped[float | None] = mapped_column(Float)
+    text: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class LiveSummary(Base):
+    """'실시간 요약': a short summary of one time window of live captions."""
+
+    __tablename__ = "live_summaries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    meeting_id: Mapped[str] = mapped_column(ForeignKey("meetings.id"), index=True)
+    start_sec: Mapped[float] = mapped_column(Float)
+    end_sec: Mapped[float] = mapped_column(Float)
+    text: Mapped[str] = mapped_column(Text)  # one bullet per line
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class ChatMessage(Base):
+    """'AI에게 질문하기' history for one note."""
+
+    __tablename__ = "chat_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    meeting_id: Mapped[str] = mapped_column(ForeignKey("meetings.id"), index=True)
+    role: Mapped[str] = mapped_column(String(16))  # user | assistant
+    content: Mapped[str] = mapped_column(Text)
+    sources_json: Mapped[str | None] = mapped_column(Text)
+    web_search: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
