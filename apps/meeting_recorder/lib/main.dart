@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'app/theme.dart';
 import 'features/home_screen.dart';
 
 void main() {
@@ -15,15 +16,8 @@ class MeetingRecorderApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: '회의 녹음',
-      theme: ThemeData(
-        colorSchemeSeed: const Color(0xFF3F51B5),
-        useMaterial3: true,
-      ),
-      darkTheme: ThemeData(
-        colorSchemeSeed: const Color(0xFF3F51B5),
-        brightness: Brightness.dark,
-        useMaterial3: true,
-      ),
+      theme: buildTheme(Brightness.light),
+      darkTheme: buildTheme(Brightness.dark),
       home: const HomeScreen(),
     );
   }

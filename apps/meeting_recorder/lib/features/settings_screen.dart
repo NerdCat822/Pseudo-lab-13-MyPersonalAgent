@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app/api.dart';
+import '../app/models.dart';
 import '../app/settings.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -17,6 +18,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _segment = TextEditingController();
   String? _result;
   bool _loaded = false;
+  bool _live = true;
+  String _template = 'meeting';
 
   @override
   void dispose() {
@@ -30,6 +33,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         serverUrl: _url.text.trim(),
         token: _token.text.trim(),
         segmentSeconds: int.tryParse(_segment.text.trim()) ?? 600,
+        liveCaptions: _live,
+        defaultTemplate: _template,
       );
 
   Future<void> _test() async {
@@ -58,6 +63,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _url.text = s.serverUrl;
       _token.text = s.token;
       _segment.text = s.segmentSeconds.toString();
+      _live = s.liveCaptions;
+      _template = s.defaultTemplate;
       _loaded = true;
     }
     return Scaffold(
@@ -92,6 +99,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               helperText: '기본 600. 테스트할 때는 30~60으로 줄이면 빨리 볼 수 있습니다',
               border: OutlineInputBorder(),
             ),
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: _live,
+            onChanged: (v) => setState(() => _live = v),
+            title: const Text('실시간 받아쓰기 기본으로 켜기'),
+            subtitle: const Text('녹음 화면에서 녹음마다 끄고 켤 수 있습니다. 켜면 무압축 WAV로 저장해 '
+                '업로드 용량이 약 8배가 되니 와이파이에서 쓰는 걸 권합니다.'),
+          ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            initialValue: _template,
+            decoration: const InputDecoration(labelText: '기본 템플릿', border: OutlineInputBorder()),
+            items: [
+              for (final t in NoteTemplate.all) DropdownMenuItem(value: t.key, child: Text('${t.label} · ${t.description}')),
+            ],
+            onChanged: (v) => setState(() => _template = v ?? 'meeting'),
           ),
           const SizedBox(height: 24),
           Row(
