@@ -38,7 +38,9 @@ cd apps/meeting_recorder && flutter run -d emulator-5554
 
 - 그룹 추가 전에 열어 둔 셸에서는 `sg kvm -c "emulator -avd pixel_api36 -gpu swiftshader_indirect"`로 띄운다.
 - 백엔드: `cd services/meeting_api && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000`. 앱 설정의 서버 주소는 `http://10.0.2.2:8000`(에뮬레이터에서 WSL 호스트). `.env`에 `MEETING_API_TOKEN` 필요(`.env.example` 참고, git 제외).
-- 마이크: WSLg PulseAudio(`PulseAudioRDPSource`)가 Windows 마이크를 WSL로 넘긴다. 에뮬레이터 Extended controls → Microphone → "Virtual microphone uses host audio input"을 켜고 **W1 녹음 스파이크에서 실제 동작 확인 필요**.
+- 마이크: 에뮬레이터는 WSLg 오디오를 쓰지 못한다(`-allow-host-audio`를 줘도 로그에 "Could not init `pa' audio driver", 2026-10-25 확인). 그래서 녹음 파일이 무음이었다. 대신 에뮬레이터 gRPC API로 WAV를 마이크에 직접 넣는다: `emu`가 `-grpc 8554`를 열고, `services/meeting_api/scripts/emulator_mic.py`가 `injectAudio`로 재생한다. 테스트 음성은 `scripts/make_test_dialogue.py`(TTS 2인 대화). 이 방식으로 실시간 받아쓰기·요약·녹음 업로드·화자 분리를 앱에서 끝까지 확인했다.
+- 창 충돌: WSLg 화면 서버가 재시작되면 에뮬레이터도 같이 죽는다("X connection to :0 broken"). 자동 검증이나 장시간 작업은 `-no-window`(헤드리스)로 띄우고 `adb exec-out screencap`으로 화면을 본다.
+- 빌드 중 메모리: 에뮬레이터 + Gradle 빌드를 같이 돌리면 에뮬레이터가 멈추거나 WSL이 재시작된 적이 있다(2026-10-25). 큰 빌드 전에는 에뮬레이터를 내리고, 빌드 후 `./gradlew --stop`.
 - 메모리: 호스트 15.7GB. `C:\Users\김현규\.wslconfig`에 `memory=8GB`, `autoMemoryReclaim=gradual`을 넣어 두었다(다음 `wsl --shutdown` 후 적용). Gradle 데몬이 3GB까지 먹으므로 부족하면 `./gradlew --stop`.
 
 ## 3. Windows 쪽 에뮬레이터를 쓰지 않는 이유 (2026-10-21 조사)
